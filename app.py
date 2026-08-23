@@ -29,6 +29,33 @@ st.set_page_config(
     layout="wide",
 )
 
+st.markdown(
+    """
+    <style>
+    .block-container { padding-top: 2rem; padding-bottom: 3rem; }
+    [data-testid="stPlotlyChart"] { width: 100%; }
+    @media (max-width: 768px) {
+        .block-container { padding: 1rem 0.75rem 2rem; }
+        [data-testid="stHeader"] { height: 2.5rem; }
+        h1 { font-size: 1.75rem !important; line-height: 1.15 !important; }
+        h2, h3 { font-size: 1.2rem !important; }
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            gap: 0.75rem !important;
+        }
+        [data-testid="stHorizontalBlock"] > div {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+        [data-testid="stDataFrame"] { overflow-x: auto; }
+        [data-testid="stPlotlyChart"] { min-height: 280px; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 def normalize_bool(value: object) -> bool:
     """Convert common CSV boolean representations to a real bool."""
