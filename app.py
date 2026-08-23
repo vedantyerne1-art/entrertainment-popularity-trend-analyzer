@@ -7,12 +7,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Iterable
-
 import numpy as np
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -138,6 +135,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, dict[str, object]]:
     return data, report
 
 
+@st.cache_data(show_spinner=False)
 def artist_metrics(data: pd.DataFrame) -> pd.DataFrame:
     """Calculate artist breadth, chart-days, and a transparent dominance score.
 
@@ -338,17 +336,21 @@ def main() -> None:
         return
     artists = artist_metrics(filtered)
     st.dataframe(kpi_table(filtered, artists), use_container_width=True, hide_index=True)
-    tabs = st.tabs(["Timeline Explorer", "Song Ranking Trends", "Artist Dominance", "Popularity vs Rank", "Content Attributes"])
-    with tabs[0]:
+    view = st.radio(
+        "Analysis view",
+        ["Timeline Explorer", "Song Ranking Trends", "Artist Dominance", "Popularity vs Rank", "Content Attributes"],
+        horizontal=True,
+    )
+    if view == "Timeline Explorer":
         timeline_tab(filtered)
-    with tabs[1]:
+    elif view == "Song Ranking Trends":
         ranking_analysis(filtered)
         song_analysis(filtered)
-    with tabs[2]:
+    elif view == "Artist Dominance":
         artist_analysis(filtered)
-    with tabs[3]:
+    elif view == "Popularity vs Rank":
         popularity_analysis(filtered)
-    with tabs[4]:
+    else:
         content_analysis(filtered)
 
 
