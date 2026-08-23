@@ -1,0 +1,1 @@
+# entrertainment-popularity-trend-analyzer
