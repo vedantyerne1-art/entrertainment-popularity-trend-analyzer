@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -102,7 +103,7 @@ def load_data(path: str) -> tuple[pd.DataFrame, dict[str, object]]:
     data["total_tracks"] = pd.to_numeric(data["total_tracks"], errors="coerce")
     data["artist_original"] = data["artist"].astype("string")
     data["artist"] = data["artist"].map(standardize_artist)
-    data["artist_list"] = data["artist"].map(split_artists)
+    data["artist_list"] = data["artist"].map(lambda value: tuple(split_artists(value)))
     data["primary_artist"] = data["artist_list"].str[0].fillna("")
     data["album_type"] = data["album_type"].astype("string").str.strip().str.lower()
     data["is_explicit"] = data["is_explicit"].map(normalize_bool)
@@ -218,12 +219,28 @@ def empty_state() -> None:
     st.info("No rows match the active filters. Widen the date, rank, artist, or content filters to continue.")
 
 
+def show_chart(figure: go.Figure, height: int = 420) -> None:
+    """Apply a compact, responsive Plotly layout consistently across the dashboard."""
+    figure.update_layout(
+        template="plotly_white",
+        height=height,
+        margin={"l": 48, "r": 18, "t": 62, "b": 48},
+        legend={"orientation": "h", "y": -0.18, "x": 0},
+        hoverlabel={"namelength": -1},
+    )
+    st.plotly_chart(
+        figure,
+        use_container_width=True,
+        config={"responsive": True, "displaylogo": False, "scrollZoom": False},
+    )
+
+
 def ranking_analysis(data: pd.DataFrame) -> None:
     st.subheader("Playlist Ranking Analysis")
     daily = data.groupby("date", as_index=False).agg(avg_rank=("position", "mean"), median_rank=("position", "median"))
     fig = px.line(daily, x="date", y=["avg_rank", "median_rank"], markers=True, title="Daily rank distribution summary")
     fig.update_yaxes(autorange="reversed", title="Rank (1 is best)")
-    st.plotly_chart(fig, use_container_width=True)
+    show_chart(fig, 360)
     movement = data.sort_values(["song", "date"]).assign(rank_change=lambda frame: frame.groupby("song")["position"].diff())
     movement_summary = movement.groupby("song", as_index=False).agg(mean_rank_change=("rank_change", "mean"), observations=("rank_change", "count"))
     risers = movement_summary.sort_values("mean_rank_change").head(5).rename(columns={"mean_rank_change": "mean daily rank change"})
@@ -243,9 +260,9 @@ def song_analysis(data: pd.DataFrame) -> None:
     left.dataframe(songs[["song", "artist", "days_on_chart", "entry_date", "exit_date", "still_charting"]].head(10), use_container_width=True, hide_index=True)
     right.markdown("**Highest average popularity**")
     right.dataframe(songs.sort_values("average_popularity", ascending=False)[["song", "artist", "average_popularity", "best_rank_achieved"]].head(10), use_container_width=True, hide_index=True)
-    fig = px.scatter(songs, x="days_on_chart", y="best_rank_achieved", size="average_popularity", color="still_charting", hover_name="song", title="Peak rank versus chart longevity")
+    fig = px.scatter(songs, x="days_on_chart", y="best_rank_achieved", size="average_popularity", color="still_charting", hover_name="song", title="Peak rank versus chart longevity", labels={"days_on_chart": "Days on chart", "best_rank_achieved": "Best rank", "average_popularity": "Avg popularity"})
     fig.update_yaxes(autorange="reversed", title="Best rank achieved")
-    st.plotly_chart(fig, use_container_width=True)
+    show_chart(fig)
     st.caption("Descriptive insight: songs in the upper-left are high-peak/short-run titles; songs toward the lower-right combine longevity with strong peak performance.")
 
 
@@ -255,9 +272,10 @@ def artist_analysis(data: pd.DataFrame) -> None:
     if metrics.empty:
         empty_state()
         return
-    fig = px.bar(metrics.head(15), x="artist_dominance_index", y="artist", orientation="h", color="total_chart_days", title="Artist Dominance Index")
+    fig = px.bar(metrics.head(15), x="artist_dominance_index", y="artist", orientation="h", color="total_chart_days", text="artist_dominance_index", title="Artist Dominance Index | Top 15", labels={"artist_dominance_index": "Dominance score", "total_chart_days": "Chart-days"})
+    fig.update_traces(texttemplate="%{text:.1f}", textposition="outside", cliponaxis=False)
     fig.update_layout(yaxis={"categoryorder": "total ascending"})
-    st.plotly_chart(fig, use_container_width=True)
+    show_chart(fig, 520)
     st.dataframe(metrics, use_container_width=True, hide_index=True)
     daily_artist = data[["date", "song", "artist_list"]].explode("artist_list").rename(columns={"artist_list": "leader_artist"}).groupby(["date", "leader_artist"], as_index=False).agg(chart_days=("song", "nunique"))
     daily_artist = daily_artist.rename(columns={"leader_artist": "artist"})
@@ -272,8 +290,11 @@ def popularity_analysis(data: pd.DataFrame) -> None:
     st.metric("Popularity/rank correlation", "Not available" if pd.isna(correlation) else f"{correlation:.3f}", help="Negative values indicate higher popularity scores tend to align with better ranks.")
     bands = pd.cut(data["position"], [0, 10, 20, 50], labels=["Top 10", "11-20", "21-50"])
     band_data = data.assign(rank_band=bands).groupby("rank_band", observed=False, as_index=False).agg(avg_popularity=("popularity", "mean"), songs=("song", "nunique"))
-    st.plotly_chart(px.bar(band_data, x="rank_band", y="avg_popularity", title="Popularity by rank band"), use_container_width=True)
-    st.plotly_chart(px.scatter(data.drop_duplicates("song"), x="rank_volatility_index", y="average_popularity", size="days_on_chart", hover_name="song", title="Popularity stability versus rank volatility"), use_container_width=True)
+    band_fig = px.bar(band_data, x="rank_band", y="avg_popularity", text="avg_popularity", title="Popularity by rank band", labels={"rank_band": "Playlist band", "avg_popularity": "Average popularity"})
+    band_fig.update_traces(texttemplate="%{text:.1f}", textposition="outside")
+    show_chart(band_fig, 340)
+    stability_fig = px.scatter(data.drop_duplicates("song"), x="rank_volatility_index", y="average_popularity", size="days_on_chart", hover_name="song", title="Popularity stability versus rank volatility", labels={"rank_volatility_index": "Rank volatility (SD)", "average_popularity": "Average popularity", "days_on_chart": "Days on chart"})
+    show_chart(stability_fig)
 
 
 def content_analysis(data: pd.DataFrame) -> None:
@@ -282,10 +303,16 @@ def content_analysis(data: pd.DataFrame) -> None:
     comparison["content"] = comparison["is_explicit"].map({True: "Explicit", False: "Non-explicit"})
     st.dataframe(comparison[["content", "songs", "avg_rank", "avg_popularity", "avg_duration"]], use_container_width=True, hide_index=True)
     left, right = st.columns(2)
-    left.plotly_chart(px.box(data, x="album_type", y="popularity", color="album_type", title="Popularity: single versus album"), use_container_width=True)
-    right.plotly_chart(px.scatter(data, x="duration_minutes", y="popularity", color="album_type", hover_name="song", title="Duration versus popularity"), use_container_width=True)
+    left_fig = px.box(data, x="album_type", y="popularity", color="album_type", title="Popularity: single versus album", labels={"album_type": "Release type", "popularity": "Popularity score"})
+    left_fig.update_layout(showlegend=False)
+    left.plotly_chart(left_fig, use_container_width=True, config={"responsive": True, "displaylogo": False})
+    duration_data = data.sample(min(5000, len(data)), random_state=42)
+    right_fig = px.scatter(duration_data, x="duration_minutes", y="popularity", color="album_type", hover_name="song", title="Duration versus popularity", labels={"duration_minutes": "Duration (minutes)", "popularity": "Popularity score", "album_type": "Release type"})
+    right.plotly_chart(right_fig, use_container_width=True, config={"responsive": True, "displaylogo": False})
     album_data = data[data["album_type"].eq("album")]
-    st.plotly_chart(px.scatter(album_data, x="total_tracks", y="position", color="is_explicit", hover_name="song", title="Album size versus song rank"), use_container_width=True)
+    album_fig = px.scatter(album_data, x="total_tracks", y="position", color="is_explicit", hover_name="song", title="Album size versus song rank", labels={"total_tracks": "Tracks on album", "position": "Playlist rank", "is_explicit": "Explicit"})
+    album_fig.update_yaxes(autorange="reversed", range=[50.5, 0.5])
+    show_chart(album_fig)
 
 
 def timeline_tab(data: pd.DataFrame) -> None:
@@ -298,7 +325,7 @@ def timeline_tab(data: pd.DataFrame) -> None:
     chart_data = data[data["song"].isin(selected)]
     fig = px.line(chart_data, x="date", y="position", color="song", markers=True, hover_data=["artist", "popularity", "popularity_trend_score"])
     fig.update_yaxes(autorange="reversed", range=[50.5, 0.5], title="Playlist rank")
-    st.plotly_chart(fig, use_container_width=True)
+    show_chart(fig, 420)
     covers = data[data["song"].isin(selected)][["song", "album_cover_url"]].drop_duplicates("song")
     covers = covers[covers["album_cover_url"].fillna("").ne("")].head(8)
     if not covers.empty:
